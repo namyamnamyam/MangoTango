@@ -25,6 +25,7 @@ main{max-width:1160px;margin:0 auto;padding:25px 22px 110px}.notice{background:#
 footer{text-align:center;padding:35px;font-size:12px;color:#9a968b;border-top:1px solid var(--stroke)}.mobile-add{display:none}
 @media(max-width:900px){.books{grid-template-columns:repeat(3,1fr)}.graphic{right:6%}.hero{padding:42px 32px}}
 @media(max-width:650px){.top-inner{min-height:60px;gap:6px;padding:10px 12px}.brand{font-size:19px;letter-spacing:-1px}.brand:before{width:29px;height:29px;border-radius:9px;margin-right:5px}.nav{margin-left:auto;gap:0}.nav button{font-size:12px;padding:8px 9px}.top .start{display:none}main{padding:14px 12px 75px}.hero{padding:34px 27px;min-height:442px;align-items:flex-start}.hero h1{font-size:35px;margin:15px 0}.hero p{font-size:12px}.graphic{top:auto;bottom:25px;right:29px;width:118px;height:139px;padding:12px;border-left-width:7px}.graphic strong{font-size:12px}.quick{grid-template-columns:1fr;margin:13px 0 30px;gap:7px}.quick>div{padding:10px 13px}.quick small{font-size:11px}.section h2{font-size:23px}.books{grid-template-columns:repeat(2,1fr);gap:14px}.book .cover{height:185px}.search{width:100%;margin-left:0}.panel,.reader{padding:19px}.reader .body{font-size:16px}.item{align-items:flex-start;flex-direction:column}.mobile-add{display:block;position:fixed;right:17px;bottom:22px;z-index:3;box-shadow:0 5px 20px #0002}}
+.reader .actions{align-items:center}button[disabled]{opacity:.5;cursor:not-allowed} .actions .muted{align-self:center} 
 </style>
 </head>
 <body>
@@ -41,6 +42,10 @@ var sample=[
 {id:"s3",author:"서랍속우주",title:"비가 내리는 행성",genre:"SF",desc:"백 년 동안 비가 멈추지 않는 행성에서 발견된 마른 편지.",symbol:"☄",private:false,mode:"직접 집필",chapters:[{title:"젖지 않은 편지",body:"이 행성에는 언제나 비가 내렸다.\n\n탐사선이 착륙한 지 열두 시간이 지났을 때, 리오는 기이한 물건을 발견했다. 완전히 마른 편지였다."}]}
 ];
 var own=[];try{var loaded=JSON.parse(localStorage.getItem(KEY)||"[]");if(Array.isArray(loaded))own=loaded;}catch(e){}
+var statKey="mangopen-v02-demo-stats";
+var stats={likes:{},views:{}};
+try{var ss=JSON.parse(localStorage.getItem(statKey)||"{}");if(ss&&typeof ss==="object"){stats.likes=ss.likes||{};stats.views=ss.views||{}}}catch(e){}
+var persistStats=function(){try{localStorage.setItem(statKey,JSON.stringify(stats))}catch(e){}};
 var screen="explore",filter="전체",search="",current=null,chapterIndex=0;
 var $=function(id){return document.getElementById(id)};
 var esc=function(x){return String(x==null?"":x).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
@@ -62,7 +67,7 @@ s+=header("MANGOPEN LIBRARY","이야기를 발견해 보세요");
 s+='<div class="filters">'+["전체","판타지","현대 판타지","로맨스","SF","미스터리"].map(function(g){return '<button class="chip '+(filter===g?"active":"")+'" data-filter="'+esc(g)+'">'+esc(g)+'</button>'}).join("")+'<input class="search" id="search" placeholder="제목, 작가 검색" value="'+esc(search)+'" aria-label="작품 검색"></div>';
 s+='<div class="books">'+visible.map(card).join("")+'</div>'+(visible.length?"":'<div class="empty">일치하는 작품이 없어. 새 작품을 만들어 봐!</div>');
 }else if(screen==="library"){
-s=header("MY LIBRARY","내 서재")+'<p class="muted">작성한 작품 '+own.length+'편 · 이 기기의 브라우저에만 저장돼요.</p><div class="items">';
+s=header("MY LIBRARY","내 서재")+'<div class="actions"><button class="outline" data-export="1">↓ 내 원고 백업</button><button class="outline" data-import="1">↑ 백업 불러오기</button><input type="file" id="backup-file" accept="application/json,.json" style="display:none"></div>'+'<p class="muted">작성한 작품 '+own.length+'편 · 이 기기의 브라우저에만 저장돼요.</p><div class="items">';
 s+=own.map(function(w){return '<div class="item"><div class="grow"><h3>'+esc(w.title)+'</h3><small>'+esc(w.genre)+' · '+w.chapters.length+'화 · '+(w.private?"비공개":"공개 표시(이 기기에서만)")+'</small></div><button class="outline" data-edit="'+esc(w.id)+'">집필</button><button class="outline" data-toggle="'+esc(w.id)+'">'+(w.private?"공개 표시":"비공개")+'</button><button class="outline danger" data-delete="'+esc(w.id)+'">삭제</button></div>'}).join("");
 s+='</div>'+(own.length?"":'<div class="empty">아직 작품이 없네. 첫 작품을 만들어봐! 🥭</div>')+'<div class="actions"><button class="primary" data-create="1">＋ 새 작품</button></div>';
 }else if(screen==="new"){
@@ -75,7 +80,7 @@ s=header("MANGOPEN STUDIO","창작 스튜디오")+'<p class="muted">설정에서
 if(own.length)s+=header("MY WORKS","이어 쓰기")+'<div class="items">'+own.map(function(w){return '<div class="item"><div class="grow"><strong>'+esc(w.title)+'</strong><div class="muted">'+w.chapters.length+'화</div></div><button class="outline" data-edit="'+esc(w.id)+'">이어 쓰기 →</button></div>'}).join("")+'</div>';
 }else if(screen==="reader"){
 var b=find(current),c=b&&b.chapters[chapterIndex];if(!b){go("explore");return}
-s='<div class="actions"><button class="outline" data-nav="explore">← 작품 목록</button></div><article class="reader"><p class="sub" style="text-align:center">✳ MANGOPEN READER</p><h1>'+esc(b.title)+'</h1><p class="muted" style="text-align:center">'+esc(b.author)+' · '+esc(b.genre)+'</p><hr style="border:0;border-top:1px solid #eee9de"><h2 class="chapter-title">'+(c?(chapterIndex+1)+'화 · '+esc(c.title):'아직 회차가 없습니다')+'</h2><div class="body">'+(c?esc(c.body):'첫 회차를 기다리고 있어요.')+'</div><div class="foot"><button class="outline" data-prev="1" '+(chapterIndex===0?"disabled":"")+'>← 이전 화</button><span class="muted">'+(c?chapterIndex+1:0)+' / '+b.chapters.length+'</span><button class="outline" data-next="1" '+(chapterIndex>=b.chapters.length-1?"disabled":"")+'>다음 화 →</button></div></article>';
+s='<div class="actions"><button class="outline" data-nav="explore">← 작품 목록</button><button class="outline" data-like="'+esc(b.id)+'">'+(stats.likes[b.id]?'♥ 좋아요 취소':'♡ 좋아요')+'</button><span class="muted">이 브라우저 내 열람 '+(Number(stats.views[b.id])||0)+'회 · 테스트 지표</span></div><article class="reader"><p class="sub" style="text-align:center">✳ MANGOPEN READER</p><h1>'+esc(b.title)+'</h1><p class="muted" style="text-align:center">'+esc(b.author)+' · '+esc(b.genre)+'</p><hr style="border:0;border-top:1px solid #eee9de"><h2 class="chapter-title">'+(c?(chapterIndex+1)+'화 · '+esc(c.title):'아직 회차가 없습니다')+'</h2><div class="body">'+(c?esc(c.body):'첫 회차를 기다리고 있어요.')+'</div><div class="foot"><button class="outline" data-prev="1" '+(chapterIndex===0?"disabled":"")+'>← 이전 화</button><span class="muted">'+(c?chapterIndex+1:0)+' / '+b.chapters.length+'</span><button class="outline" data-next="1" '+(chapterIndex>=b.chapters.length-1?"disabled":"")+'>다음 화 →</button></div></article>';
 }
 a.innerHTML=s;
 if($("work-form"))$("work-form").addEventListener("submit",function(e){e.preventDefault();var f=new FormData(e.target);var w={id:"w"+Date.now()+"-"+Math.random().toString(36).slice(2,6),title:String(f.get("title")).trim(),author:String(f.get("author")).trim()||"익명 작가",genre:String(f.get("genre")),mode:String(f.get("mode")),desc:String(f.get("desc")).trim(),symbol:"✎",private:true,chapters:[]};if(!w.title||!w.desc)return;own.push(w);save();current=w.id;screen="studio";render();window.scrollTo(0,0)});
@@ -86,12 +91,40 @@ document.addEventListener("click",function(e){var b=e.target.closest("button");i
 if(d.nav){go(d.nav);return}if(d.create){go("new");return}
 if(d.filter){filter=d.filter;render();return}
 if(d.edit){current=d.edit;screen="studio";render();window.scrollTo(0,0);return}
-if(d.read){current=d.read;chapterIndex=0;screen="reader";render();window.scrollTo(0,0);return}
+if(d.like){stats.likes[d.like]=!stats.likes[d.like];persistStats();render();return}
+if(d.export){var data={app:"mangopen",version:2,exportedAt:new Date().toISOString(),works:own};var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="mangopen-backup-"+new Date().toISOString().slice(0,10)+".json";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},1000);return}
+if(d.import){var pick=$("backup-file");if(pick)pick.click();return}
+if(d.read){current=d.read;chapterIndex=0;stats.views[current]=(Number(stats.views[current])||0)+1;persistStats();screen="reader";render();window.scrollTo(0,0);return}
 if(d.chapter!==undefined){chapterIndex=Number(d.chapter);screen="reader";render();window.scrollTo(0,0);return}
 if(d.prev){chapterIndex=Math.max(0,chapterIndex-1);render();window.scrollTo(0,0);return}
 if(d.next){chapterIndex++;render();window.scrollTo(0,0);return}
 if(d.toggle){var w=own.find(function(w){return w.id===d.toggle});if(w){w.private=!w.private;save();render()}return}
 if(d.delete){var w=own.find(function(w){return w.id===d.delete});if(w&&confirm("정말 '"+w.title+"' 작품을 삭제할까? 이 작업은 되돌릴 수 없어.")){own=own.filter(function(v){return v.id!==w.id});save();render()}return}
+});
+document.addEventListener("change",async function(e){
+  if(!e.target||e.target.id!=="backup-file")return;
+  var file=e.target.files&&e.target.files[0];if(!file)return;
+  if(file.size>2*1024*1024){alert("2MB 이하의 원고 백업 파일만 불러올 수 있어.");return}
+  try{
+    var raw=JSON.parse(await file.text());
+    if(!raw||raw.app!=="mangopen"||!Array.isArray(raw.works)||raw.works.length>200)throw Error("망고펜 백업 형식이 아니거나 작품이 너무 많아.");
+    var batch=raw.works.map(function(w,i){
+      if(!w||typeof w.title!=="string"||typeof w.desc!=="string"||!Array.isArray(w.chapters)||w.chapters.length>500)throw Error("작품/회차 형식이 올바르지 않아.");
+      return {
+        id:"w"+Date.now()+"-"+i+"-"+Math.random().toString(36).slice(2,8),
+        title:w.title.slice(0,100),
+        author:typeof w.author==="string"?w.author.slice(0,40):"익명 작가",
+        genre:typeof w.genre==="string"?w.genre.slice(0,40):"기타",
+        mode:typeof w.mode==="string"?w.mode.slice(0,40):"직접 집필",
+        desc:w.desc.slice(0,2000),
+        symbol:"✎",
+        private:true,
+        chapters:w.chapters.map(function(c){if(!c||typeof c.title!=="string"||typeof c.body!=="string")throw Error("회차 내용이 올바르지 않아.");return {title:c.title.slice(0,100),body:c.body.slice(0,40000)}})
+      }
+    });
+    if(!confirm(batch.length+"개 작품을 이 브라우저의 내 서재에 추가할까? (가져온 작품은 비공개로 설정돼)"))return;
+    own=own.concat(batch);save();go("library");alert("백업을 가져왔어! 중요한 글은 원본 파일도 보관해 줘.");
+  }catch(err){alert("복원 실패: "+(err&&err.message?err.message:"파일을 확인해 줘"))}
 });
 $("top-create").onclick=function(){go("new")};$("mobile-create").onclick=function(){go("new")};render();
 </script>
