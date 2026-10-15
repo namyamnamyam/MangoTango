@@ -41,6 +41,25 @@ var auth=null;
 var authStoreKey="mangopen-auth-v04";
 try{auth=JSON.parse(localStorage.getItem(authStoreKey)||"null")}catch(e){}
 function saveAuth(){try{if(auth)localStorage.setItem(authStoreKey,JSON.stringify(auth));else localStorage.removeItem(authStoreKey)}catch(e){}}
+async function finishEmailConfirmation(){
+ var hash=new URLSearchParams(location.hash.slice(1));
+ var search=new URLSearchParams(location.search);
+ var error=hash.get("error_description")||search.get("error_description");
+ if(error){history.replaceState(null,"",location.pathname);alert("이메일 인증 오류: "+error);return}
+ var access=hash.get("access_token"),refresh=hash.get("refresh_token");
+ if(access&&refresh){
+  try{
+   var u=await api("/auth/v1/user","GET",undefined,access);
+   auth={access_token:access,refresh_token:refresh,expires_at:Math.floor(Date.now()/1000)+Number(hash.get("expires_in")||3600),user:u};
+   saveAuth();history.replaceState(null,"",location.pathname);screen="account";render();
+   alert("이메일 인증과 로그인 완료! 이제 내 서재를 사용할 수 있어.");
+  }catch(e){alert("인증 처리 오류: "+e.message)}
+  return;
+ }
+ var code=search.get("code");
+ if(code){history.replaceState(null,"",location.pathname);alert("이메일 인증을 마쳤다면 회원가입이 아니라 로그인 버튼을 눌러 줘.");}
+}
+
 async function api(path,method,body,token){
  var response=await fetch(SUPA_URL+path,{method:method||"GET",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+(token||SUPA_KEY),"Content-Type":"application/json","Prefer":"return=representation"},body:body===undefined?undefined:JSON.stringify(body)});
  var data=await response.json().catch(function(){return {}});
@@ -237,6 +256,7 @@ document.addEventListener("change",async function(e){
     own=own.concat(batch);save();go("library");alert("백업을 가져왔어! 중요한 글은 원본 파일도 보관해 줘.");
   }catch(err){alert("복원 실패: "+(err&&err.message?err.message:"파일을 확인해 줘"))}
 });
+finishEmailConfirmation().catch(function(e){alert("인증 확인 오류: "+e.message)});
 $("top-create").onclick=function(){go("new")};$("mobile-create").onclick=function(){go("new")};render();
 </script>
 </body></html>
