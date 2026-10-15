@@ -29,12 +29,59 @@ footer{text-align:center;padding:35px;font-size:12px;color:#9a968b;border-top:1p
 </style>
 </head>
 <body>
-<header class="top"><div class="top-inner"><div class="brand">mango<span style="font-weight:450">pen</span><span class="dot">.</span></div><nav class="nav"><button data-nav="explore" class="active">발견</button><button data-nav="studio">스튜디오</button><button data-nav="library">내 서재</button></nav><button class="primary start" id="top-create">＋ 새 작품</button></div></header>
-<main><div class="notice">✳ 망고펜 체험판 · 작품은 지금 사용하는 브라우저에만 저장돼요. 실제 공개 공유·회원가입·AI 생성·결제는 아직 연결되지 않았습니다.</div><div id="app"></div></main>
+<header class="top"><div class="top-inner"><div class="brand">mango<span style="font-weight:450">pen</span><span class="dot">.</span></div><nav class="nav"><button data-nav="explore" class="active">발견</button><button data-nav="studio">스튜디오</button><button data-nav="library">내 서재</button></nav><button class="outline start" id="account-button">로그인</button><button class="primary start" id="top-create">＋ 새 작품</button></div></header>
+<main><div class="notice">✳ 망고펜 베타 · 로그인 후 클라우드 동기화는 내 서재에서 직접 실행하세요. AI 생성·실제 공개 공유·결제는 아직 준비 중입니다.</div><div id="app"></div></main>
 <button class="primary mobile-add" id="mobile-create">＋ 새 작품</button>
 <footer>✳ MANGOPEN · WEB DEMO · 상표 등록 전 가칭</footer>
 <script>
 "use strict";
+var SUPA_URL="https://gblkajfvhgcedwoydyrj.supabase.co";
+var SUPA_KEY="sb_publishable__QPlOc9-6N9lxDQZHIjT6w_NJzCkOyV";
+var auth=null;
+var authStoreKey="mangopen-auth-v04";
+try{auth=JSON.parse(localStorage.getItem(authStoreKey)||"null")}catch(e){}
+function saveAuth(){try{if(auth)localStorage.setItem(authStoreKey,JSON.stringify(auth));else localStorage.removeItem(authStoreKey)}catch(e){}}
+async function api(path,method,body,token){
+ var response=await fetch(SUPA_URL+path,{method:method||"GET",headers:{"apikey":SUPA_KEY,"Authorization":"Bearer "+(token||SUPA_KEY),"Content-Type":"application/json","Prefer":"return=representation"},body:body===undefined?undefined:JSON.stringify(body)});
+ var data=await response.json().catch(function(){return {}});
+ if(!response.ok)throw Error(data.msg||data.error_description||data.message||data.error||"요청 실패: "+response.status);
+ return data;
+}
+async function validSession(){
+ if(!auth||!auth.access_token)return null;
+ if(Date.now()<(auth.expires_at||0)*1000-60000)return auth.access_token;
+ if(!auth.refresh_token){auth=null;saveAuth();return null}
+ try{var d=await api("/auth/v1/token?grant_type=refresh_token","POST",{refresh_token:auth.refresh_token});auth={access_token:d.access_token,refresh_token:d.refresh_token,expires_at:Math.floor(Date.now()/1000)+d.expires_in,user:d.user};saveAuth();return auth.access_token}
+ catch(e){auth=null;saveAuth();return null}
+}
+async function loginAction(mode,email,password){
+ var d=await api(mode==="signup"?"/auth/v1/signup":"/auth/v1/token?grant_type=password","POST",{email:email,password:password});
+ if(d.access_token){auth={access_token:d.access_token,refresh_token:d.refresh_token,expires_at:Math.floor(Date.now()/1000)+d.expires_in,user:d.user};saveAuth();return "로그인 완료!"}
+ return "가입 확인 메일을 확인해 줘. 인증 후 로그인할 수 있어.";
+}
+async function uploadCloud(){
+ var token=await validSession();if(!token)throw Error("먼저 로그인해 줘.");
+ if(!confirm("현재 브라우저의 내 작품 "+own.length+"개를 클라우드에 추가할까? 기존 클라우드 작품은 삭제하지 않아."))return;
+ var count=0;
+ for(var w of own){
+  var works=await api("/rest/v1/works","POST",{author_id:auth.user.id,author_display:w.author||"익명 작가",title:w.title,summary:w.desc||"",genre:w.genre||"기타",creation_mode:["직접 집필","AI 보조","AI 창작"].includes(w.mode)?w.mode:"직접 집필",visibility:"private"},token);
+  var id=works[0]&&works[0].id;if(!id)throw Error("작품 생성 실패");
+  for(var i=0;i<w.chapters.length;i++){var c=w.chapters[i];await api("/rest/v1/chapters","POST",{work_id:id,chapter_number:i+1,title:c.title,body:c.body,status:"draft"},token)}
+  count++;
+ }
+ alert(count+"개 작품을 클라우드에 추가했어. 중복 업로드에 주의해 줘!");
+}
+async function downloadCloud(){
+ var token=await validSession();if(!token)throw Error("먼저 로그인해 줘.");
+ var works=await api("/rest/v1/works?select=*&order=created_at.desc","GET",undefined,token);
+ if(!works.length){alert("클라우드에 저장된 작품이 없어.");return}
+ var ids=works.map(function(w){return w.id});
+ var chapters=await api("/rest/v1/chapters?select=*&work_id=in.("+ids.join(",")+")&order=chapter_number.asc","GET",undefined,token);
+ var seen={};own.forEach(function(w){if(w.cloudId)seen[w.cloudId]=true});
+ var added=0;
+ works.forEach(function(w){if(seen[w.id])return;own.push({id:"w"+Date.now()+"-"+Math.random().toString(36).slice(2,8),cloudId:w.id,title:w.title,author:w.author_display,genre:w.genre,mode:w.creation_mode,desc:w.summary,symbol:"✎",private:true,chapters:chapters.filter(function(c){return c.work_id===w.id}).map(function(c){return {title:c.title,body:c.body}})});added++});
+ save();render();alert(added+"개 작품을 브라우저로 가져왔어. 기존 작품은 유지돼.");
+}
 var KEY="mangopen-v01-demo";
 var sample=[
 {id:"s1",author:"달그림자",title:"별을 삼킨 도서관",genre:"판타지",desc:"별이 사라진 밤, 단 하나의 도서관에서 이야기가 자란다.",symbol:"✦",private:false,mode:"AI 보조",chapters:[{title:"어느 밤의 초대장",body:"그날 밤, 아린은 책갈피 사이에서 별 하나를 발견했다.\n\n별은 작았지만 분명 빛나고 있었다. 낡은 도서관의 창밖으로는 이미 모든 별이 사라진 뒤였다.\n\n“이걸 어디서 찾았니?”\n\n사서 이안의 목소리가 가라앉았다. 아린이 대답하기도 전에 복도 끝의 문이 스스로 열렸다."}]},
@@ -63,6 +110,13 @@ var go=function(name){screen=name;current=null;editingChapter=null;render();wind
 var render=function(){
 document.querySelectorAll("[data-nav]").forEach(function(b){b.classList.toggle("active",b.dataset.nav===screen)});
 var a=$("app"),s="";
+var ab=$("account-button");if(ab)ab.textContent=auth&&auth.user?"내 계정":"로그인";
+if(screen==="account"){
+ s=header("MANGOPEN ACCOUNT","회원가입 · 로그인")+
+ '<p class="muted">Supabase 계정으로 로그인할 수 있어요. 비밀번호는 브라우저에 저장하지 않습니다.</p>'+
+ (auth&&auth.user?'<div class="panel"><h2>로그인됨</h2><p>'+esc(auth.user.email||"내 계정")+'</p><div class="actions"><button class="outline" data-logout="1">로그아웃</button><button class="primary" data-nav="library">내 서재로 →</button></div></div>':
+ '<form class="panel" id="auth-form"><label class="field">이메일<input name="email" type="email" required autocomplete="email"></label><label class="field">비밀번호<input name="password" type="password" minlength="8" required autocomplete="current-password"></label><div class="actions"><button class="primary" name="action" value="login">로그인</button><button class="outline" name="action" value="signup">회원가입</button></div><p class="muted">회원가입 후 이메일 인증이 필요할 수 있어요.</p></form>');
+}else 
 if(screen==="explore"){
 var visible=all().filter(function(w){return !w.private&&(filter==="전체"||w.genre===filter)&&(w.title+" "+w.author+" "+w.desc).toLowerCase().includes(search.toLowerCase())});
 s='<div class="hero"><div class="copy"><div class="eyebrow">✳ 새로운 이야기가 시작되는 곳</div><h1>머릿속 이야기를<br><span>세상 밖으로.</span></h1><p>상상하고, 쓰고, 나누는 창작 공간.<br>누구나 자기만의 세계를 만들 수 있어요.</p><button class="dark" data-create="1">나만의 이야기 시작하기 ↗</button></div><div class="graphic"><small>✳ MANGOPEN</small><strong>모든 세계는<br>한 문장에서<br>시작된다.</strong><em>✳</em></div></div>';
@@ -71,7 +125,7 @@ s+=header("MANGOPEN LIBRARY","이야기를 발견해 보세요");
 s+='<div class="filters">'+["전체","판타지","현대 판타지","로맨스","SF","미스터리"].map(function(g){return '<button class="chip '+(filter===g?"active":"")+'" data-filter="'+esc(g)+'">'+esc(g)+'</button>'}).join("")+'<input class="search" id="search" placeholder="제목, 작가 검색" value="'+esc(search)+'" aria-label="작품 검색"></div>';
 s+='<div class="books">'+visible.map(card).join("")+'</div>'+(visible.length?"":'<div class="empty">일치하는 작품이 없어. 새 작품을 만들어 봐!</div>');
 }else if(screen==="library"){
-s=header("MY LIBRARY","내 서재")+'<div class="actions"><button class="outline" data-export="1">↓ 내 원고 백업</button><button class="outline" data-import="1">↑ 백업 불러오기</button><input type="file" id="backup-file" accept="application/json,.json" style="display:none"></div>'+'<p class="muted">작성한 작품 '+own.length+'편 · 이 기기의 브라우저에만 저장돼요.</p><div class="items">';
+s=header("MY LIBRARY","내 서재")+'<div class="panel"><h3>☁ 클라우드 원고 보관함 (베타)</h3><p class="muted">로그인한 계정에 작품을 별도로 저장하거나 불러옵니다. 자동 동기화는 아직 지원하지 않으며, 업로드를 반복하면 중복될 수 있어요. 클라우드에 업로드된 작품은 비공개 초안으로 저장됩니다.</p><div class="actions"><button class="outline" data-nav="account">계정 관리</button><button class="primary" data-cloud-upload="1">↑ 클라우드에 복사</button><button class="outline" data-cloud-download="1">↓ 클라우드에서 가져오기</button></div></div>'+'<div class="actions"><button class="outline" data-export="1">↓ 내 원고 백업</button><button class="outline" data-import="1">↑ 백업 불러오기</button><input type="file" id="backup-file" accept="application/json,.json" style="display:none"></div>'+'<p class="muted">작성한 작품 '+own.length+'편 · 이 기기의 브라우저에만 저장돼요.</p><div class="items">';
 s+=own.map(function(w){return '<div class="item"><div class="grow"><h3>'+esc(w.title)+'</h3><small>'+esc(w.genre)+' · '+w.chapters.length+'화 · '+(w.private?"비공개":"공개 표시(이 기기에서만)")+'</small></div><button class="outline" data-edit="'+esc(w.id)+'">집필</button><button class="outline" data-toggle="'+esc(w.id)+'">'+(w.private?"공개 표시":"비공개")+'</button><button class="outline danger" data-delete="'+esc(w.id)+'">삭제</button></div>'}).join("");
 s+='</div>'+(own.length?"":'<div class="empty">아직 작품이 없네. 첫 작품을 만들어봐! 🥭</div>')+'<div class="actions"><button class="primary" data-create="1">＋ 새 작품</button></div>';
 }else if(screen==="new"){
@@ -102,6 +156,10 @@ var b=find(current),c=b&&b.chapters[chapterIndex];if(!b){go("explore");return}
 s='<div class="actions"><button class="outline" data-nav="explore">← 작품 목록</button><button class="outline" data-like="'+esc(b.id)+'">'+(stats.likes[b.id]?'♥ 좋아요 취소':'♡ 좋아요')+'</button><span class="muted">이 브라우저 내 열람 '+(Number(stats.views[b.id])||0)+'회 · 테스트 지표</span></div><article class="reader"><p class="sub" style="text-align:center">✳ MANGOPEN READER</p><h1>'+esc(b.title)+'</h1><p class="muted" style="text-align:center">'+esc(b.author)+' · '+esc(b.genre)+'</p><hr style="border:0;border-top:1px solid #eee9de"><h2 class="chapter-title">'+(c?(chapterIndex+1)+'화 · '+esc(c.title):'아직 회차가 없습니다')+'</h2><div class="body">'+(c?esc(c.body):'첫 회차를 기다리고 있어요.')+'</div><div class="foot"><button class="outline" data-prev="1" '+(chapterIndex===0?"disabled":"")+'>← 이전 화</button><span class="muted">'+(c?chapterIndex+1:0)+' / '+b.chapters.length+'</span><button class="outline" data-next="1" '+(chapterIndex>=b.chapters.length-1?"disabled":"")+'>다음 화 →</button></div></article>';
 }
 a.innerHTML=s;
+if($("auth-form"))$("auth-form").addEventListener("submit",async function(e){
+ e.preventDefault();var btn=e.submitter;var mode=btn&&btn.value==="signup"?"signup":"login";var fd=new FormData(e.target);
+ try{var message=await loginAction(mode,String(fd.get("email")||"").trim(),String(fd.get("password")||""));alert(message);render()}catch(err){alert("인증 오류: "+err.message)}
+});
 if($("work-form"))$("work-form").addEventListener("submit",function(e){e.preventDefault();var f=new FormData(e.target);var w={id:"w"+Date.now()+"-"+Math.random().toString(36).slice(2,6),title:String(f.get("title")).trim(),author:String(f.get("author")).trim()||"익명 작가",genre:String(f.get("genre")),mode:String(f.get("mode")),desc:String(f.get("desc")).trim(),symbol:"✎",private:true,chapters:[]};if(!w.title||!w.desc)return;own.push(w);save();current=w.id;editingChapter=null;screen="studio";render();window.scrollTo(0,0)});
 if($("chapter-form")){
   var chapterForm=$("chapter-form");
@@ -124,7 +182,12 @@ if($("chapter-form")){
 }
 if($("search"))$("search").addEventListener("input",function(e){search=e.target.value;var p=e.target.selectionStart;render();var n=$("search");n.focus();n.setSelectionRange(p,p)});
 };
+async function awaitSafeLogout(){try{var t=await validSession();if(t)await api("/auth/v1/logout","POST",{},t)}catch(e){}}
+$("account-button").onclick=function(){go("account")};
 document.addEventListener("click",function(e){var b=e.target.closest("button");if(!b||b.disabled)return;var d=b.dataset;
+if(d.logout){var token=awaitSafeLogout();auth=null;saveAuth();render();return}
+if(d.cloudUpload){uploadCloud().catch(function(err){alert("클라우드 저장 실패: "+err.message)});return}
+if(d.cloudDownload){downloadCloud().catch(function(err){alert("클라우드 가져오기 실패: "+err.message)});return}
 if(d.nav){go(d.nav);return}if(d.create){go("new");return}
 if(d.filter){filter=d.filter;render();return}
 if(d.edit){current=d.edit;editingChapter=null;screen="studio";render();window.scrollTo(0,0);return}
